@@ -1,0 +1,28 @@
+# Entornos virtuales
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Base de datos
+db.sqlite3
+db.sqlite3-journal
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Variables de entorno
+.env
+
+# Logs
+*.log
+
+# Archivos estáticos recolectados
+staticfiles/
+static/
+
+# Media
+media/
