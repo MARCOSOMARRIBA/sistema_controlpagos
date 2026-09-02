@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import timedelta
 import os
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -55,14 +56,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'backend_core.wsgi.application'
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'postgres',
-        'USER': 'postgres',
-        'PASSWORD': 'Morgado9090@',
-        'HOST': 'db.fnbyanwxotalmhkjjlry.supabase.co',
-        'PORT': '5432',
-    }
+    'default': dj_database_url.parse('postgresql://postgres.fnbyanwxotalmhkjjlry:Morgado9090%40@aws-0-us-east-2.pooler.supabase.com:5432/postgres')
 }
 
 AUTH_PASSWORD_VALIDATORS = [
