@@ -19,7 +19,7 @@ class Factura(models.Model):
     id_ajustador = models.ForeignKey(UsuarioCustom, models.DO_NOTHING, db_column='id_ajustador', null=True, blank=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'factura'
         app_label = 'facturacion'  # Explícito para evitar RuntimeError con Python 3.13
 

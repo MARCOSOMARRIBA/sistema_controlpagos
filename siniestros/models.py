@@ -7,7 +7,7 @@ class UsuarioCustom(models.Model):
     factor_ajuste = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, default=1.0)
     
     class Meta:
-        managed = False
+        managed = True
         db_table = 'usuario'
         app_label = 'siniestros'
 
@@ -16,9 +16,10 @@ class Aseguradora(models.Model):
     nombre = models.CharField(max_length=100)
     honorario_base = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     tarifa_km = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    solo_inspecciones = models.BooleanField(default=False)
     
     class Meta:
-        managed = False
+        managed = True
         db_table = 'aseguradora'
         app_label = 'siniestros'
         
@@ -58,7 +59,7 @@ class Siniestro(models.Model):
     fecha_asignacion = models.DateField(null=True, blank=True, auto_now_add=True)
     
     class Meta:
-        managed = False
+        managed = True
         db_table = 'siniestro'
         app_label = 'siniestros'
 
@@ -72,7 +73,7 @@ class CorteMensual(models.Model):
     mes_corte = models.CharField(max_length=7, null=True, blank=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'corte_mensual'
         unique_together = (('id_ajustador', 'mes_corte'),)
         app_label = 'siniestros'
@@ -89,7 +90,7 @@ class Inspeccion(models.Model):
     id_siniestro = models.ForeignKey('Siniestro', models.DO_NOTHING, db_column='id_siniestro')
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'inspeccion'
         app_label = 'siniestros'
 
@@ -100,7 +101,7 @@ class Gasto(models.Model):
     id_inspeccion = models.ForeignKey('Inspeccion', models.DO_NOTHING, db_column='id_inspeccion')
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'gasto'
         app_label = 'siniestros'
 
@@ -113,7 +114,7 @@ class Anticipo(models.Model):
     estado = models.CharField(max_length=50, default='PENDIENTE')
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'anticipo'
         app_label = 'siniestros'
 

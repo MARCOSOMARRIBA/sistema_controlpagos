@@ -20,6 +20,16 @@ class IsAjustadorRole(permissions.BasePermission):
     def has_permission(self, request, view):
         return get_user_role(request.user) == 'AJUSTADOR'
 
+class IsInspectorRole(permissions.BasePermission):
+    """Permite acceso exclusivo a usuarios con rol INSPECTOR."""
+    def has_permission(self, request, view):
+        return get_user_role(request.user) == 'INSPECTOR'
+
+class IsAjustadorOrInspectorRole(permissions.BasePermission):
+    """Permite acceso a AJUSTADOR e INSPECTOR."""
+    def has_permission(self, request, view):
+        return get_user_role(request.user) in ('AJUSTADOR', 'INSPECTOR')
+
 class IsAdminOrAjustadorOwner(permissions.BasePermission):
     """
     Control de acceso:

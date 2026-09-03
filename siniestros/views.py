@@ -5,7 +5,7 @@ from django.db import transaction
 from decimal import Decimal, InvalidOperation  # BUG-006: usar Decimal para evitar errores de punto flotante
 from .models import Aseguradora, Siniestro, UsuarioCustom, CorteMensual, Gasto, Inspeccion
 from .serializers import AseguradoraSerializer, SiniestroSerializer, CorteMensualSerializer
-from .permissions import IsAdminRole, IsAjustadorRole
+from .permissions import IsAdminRole, IsAjustadorRole, IsInspectorRole, IsAjustadorOrInspectorRole, get_user_role
 from rest_framework import serializers
 from rest_framework.serializers import ModelSerializer
 from django.core.management import call_command
@@ -281,16 +281,58 @@ class CorteMensualAPIView(APIView):
         except Exception:
             pass
 
+        # Calcular inspecciones de aseguradoras solo_inspecciones (BBVA) por ajustador+mes
+        inspecciones_map = {}
+        try:
+            insp_qs = Inspeccion.objects.select_related(
+                'id_siniestro__ajustador', 'id_siniestro__aseguradora'
+            ).filter(id_siniestro__aseguradora__solo_inspecciones=True)
+            if ajustador_filter:
+                insp_qs = insp_qs.filter(id_siniestro__ajustador__username__icontains=ajustador_filter)
+            if mes_filter:
+                try:
+                    anio_i, mes_i = mes_filter.split('-')
+                    insp_qs = insp_qs.filter(
+                        fecha_inspeccion__year=int(anio_i), fecha_inspeccion__month=int(mes_i)
+                    )
+                except (ValueError, AttributeError):
+                    pass
+
+            for i in insp_qs:
+                ajust_name = i.id_siniestro.ajustador.username if i.id_siniestro.ajustador else 'Sin asignar'
+                mes_i_key = i.fecha_inspeccion.strftime('%Y-%m') if i.fecha_inspeccion else 'Sin fecha'
+                k = (ajust_name, mes_i_key)
+                if k not in inspecciones_map:
+                    inspecciones_map[k] = {'total': 0.0, 'count': 0}
+                inspecciones_map[k]['total'] += float(i.total_pagar or 0)
+                inspecciones_map[k]['count'] += 1
+                meses_disponibles.add(mes_i_key)
+        except Exception:
+            pass
+
+        # Agregar entradas de inspecciones BBVA que no tienen facturas
+        for (ajust_name, mes_key), insp_data in inspecciones_map.items():
+            if (ajust_name, mes_key) not in resumen:
+                resumen[(ajust_name, mes_key)]['ajustador_nombre'] = ajust_name
+                resumen[(ajust_name, mes_key)]['mes_corte'] = mes_key
+
         resultado = []
-        for (ajustador_nombre, mes_pago), r in resumen.items():
-            anticipos = anticipos_map.get((ajustador_nombre, mes_pago), 0.0)
-            total_bruto = r['total_honorarios'] + r['total_gastos']
+        all_keys = set(resumen.keys()) | set(inspecciones_map.keys())
+        for key in all_keys:
+            ajustador_nombre, mes_pago = key
+            r = resumen.get(key, {'total_honorarios': 0.0, 'total_gastos': 0.0, 'num_facturas': 0, 'facturas': []})
+            anticipos = anticipos_map.get(key, 0.0)
+            insp_data = inspecciones_map.get(key, {'total': 0.0, 'count': 0})
+            total_inspecciones = insp_data['total']
+            total_bruto = r['total_honorarios'] + r['total_gastos'] + total_inspecciones
             neto = total_bruto - anticipos
             resultado.append({
                 'ajustador_nombre': ajustador_nombre,
                 'mes_corte': mes_pago,
                 'total_honorarios': round(r['total_honorarios'], 2),
                 'total_gastos': round(r['total_gastos'], 2),
+                'total_inspecciones_bbva': round(total_inspecciones, 2),
+                'num_inspecciones_bbva': insp_data['count'],
                 'total_bruto': round(total_bruto, 2),
                 'total_anticipos_descontados': round(anticipos, 2),
                 'monto_neto_pagado': round(neto, 2),
@@ -890,3 +932,69 @@ class AdminSiniestrosPorAjustadorAPIView(APIView):
                 'total_ajustadores': len(resumen_por_ajustador),
             }
         })
+
+
+class MisInspeccionesAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsInspectorRole]
+
+    def get(self, request):
+        try:
+            inspector_custom = UsuarioCustom.objects.get(username=request.user.username)
+        except UsuarioCustom.DoesNotExist:
+            return Response({"warning": "El usuario no tiene perfil de inspector.", "inspecciones": [], "resumen": []})
+
+        mes_filter = request.query_params.get("mes", None)
+        inspecciones_qs = Inspeccion.objects.select_related(
+            "id_siniestro", "id_siniestro__aseguradora", "id_siniestro__ajustador"
+        ).filter(id_siniestro__ajustador=inspector_custom)
+
+        if mes_filter:
+            try:
+                anio, mes = mes_filter.split("-")
+                inspecciones_qs = inspecciones_qs.filter(
+                    fecha_inspeccion__year=int(anio), fecha_inspeccion__month=int(mes)
+                )
+            except (ValueError, AttributeError):
+                pass
+
+        inspecciones_data = []
+        total_general = 0.0
+        from collections import defaultdict
+        resumen_mes = defaultdict(lambda: {"total": 0.0, "count": 0})
+
+        for i in inspecciones_qs:
+            s = i.id_siniestro
+            aseg = s.aseguradora
+            total = float(i.total_pagar or 0)
+            mes_key = i.fecha_inspeccion.strftime("%Y-%m") if i.fecha_inspeccion else "Sin fecha"
+            inspecciones_data.append({
+                "id": i.id_inspeccion,
+                "numero_siniestro": s.numero_siniestro or "",
+                "asegurado": s.asegurado or "",
+                "aseguradora": aseg.nombre if aseg else "",
+                "solo_inspecciones": aseg.solo_inspecciones if aseg else False,
+                "fecha_inspeccion": i.fecha_inspeccion.strftime("%Y-%m-%d") if i.fecha_inspeccion else None,
+                "km_recorridos": float(i.km_recorridos or 0),
+                "costo": float(i.costo or 0),
+                "viaticos": float(i.viaticos or 0),
+                "peajes": float(i.peajes or 0),
+                "total_pagar": total,
+                "mes": mes_key,
+            })
+            total_general += total
+            resumen_mes[mes_key]["total"] += total
+            resumen_mes[mes_key]["count"] += 1
+
+        resumen = [
+            {"mes": m, "total": round(v["total"], 2), "num_inspecciones": v["count"]}
+            for m, v in sorted(resumen_mes.items(), reverse=True)
+        ]
+        return Response({"inspecciones": inspecciones_data, "resumen": resumen, "total_general": round(total_general, 2)})
+
+
+class InspectoresListAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        inspectores = UsuarioCustom.objects.filter(rol="INSPECTOR").values_list("username", flat=True)
+        return Response(list(inspectores))
